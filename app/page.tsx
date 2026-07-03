@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { browserClient } from "@/lib/supabase";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Source {
   filename: string;
@@ -23,34 +22,21 @@ interface LogRow {
   latency_ms: number;
 }
 
-export default function Home() {
-  const supabase = useMemo(() => browserClient(), []);
-  const [token, setToken] = useState<string | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
+// Per-browser identity: a random UUID kept in localStorage. No auth provider —
+// the id is sent as the bearer token and every DB query is scoped to it.
+const UID_KEY = "rag-doc-qa-uid";
 
-  // Sign in anonymously so every row is scoped to a real auth.uid() (RLS).
+export default function Home() {
+  const [token, setToken] = useState<string | null>(null);
+
   useEffect(() => {
-    let active = true;
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      let session = data.session;
-      if (!session) {
-        const { data: signIn, error } = await supabase.auth.signInAnonymously();
-        if (error) {
-          if (active)
-            setAuthError(
-              "Anonymous sign-in failed. Enable it in Supabase > Authentication > Providers.",
-            );
-          return;
-        }
-        session = signIn.session;
-      }
-      if (active) setToken(session?.access_token ?? null);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [supabase]);
+    let id = localStorage.getItem(UID_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(UID_KEY, id);
+    }
+    setToken(id);
+  }, []);
 
   return (
     <div className="wrap">
@@ -60,15 +46,12 @@ export default function Home() {
           Ingest documents → retrieve with pgvector → answer with citations →
           refuse when unsupported. Every query is logged.
         </p>
-        {authError && (
-          <p style={{ color: "var(--bad)" }}>{authError}</p>
-        )}
       </header>
 
       <div className="grid">
         <UploadPanel token={token} />
         <AskPanel token={token} />
-        <AuditPanel supabase={supabase} token={token} />
+        <AuditPanel token={token} />
       </div>
     </div>
   );
@@ -210,24 +193,19 @@ function AskPanel({ token }: { token: string | null }) {
   );
 }
 
-function AuditPanel({
-  supabase,
-  token,
-}: {
-  supabase: ReturnType<typeof browserClient>;
-  token: string | null;
-}) {
+function AuditPanel({ token }: { token: string | null }) {
   const [rows, setRows] = useState<LogRow[]>([]);
 
   const refresh = useCallback(async () => {
-    // RLS ensures this returns only the signed-in user's rows.
-    const { data } = await supabase
-      .from("query_log")
-      .select("created_at, query, grounded, latency_ms")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    setRows((data as LogRow[]) ?? []);
-  }, [supabase]);
+    if (!token) return;
+    // The endpoint scopes rows to this user id — returns only our own queries.
+    const res = await fetch("/api/log", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const json = await res.json();
+    setRows((json.rows as LogRow[]) ?? []);
+  }, [token]);
 
   useEffect(() => {
     if (token) refresh();

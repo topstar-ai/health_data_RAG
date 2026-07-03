@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { serviceClient } from "@/lib/supabase";
+import { sql } from "@/lib/db";
 import { getUserId } from "@/lib/auth";
 import { extractText } from "@/lib/pdf";
 import { chunkText } from "@/lib/chunking";
@@ -13,7 +13,7 @@ const ALLOWED_EXT = [".pdf", ".txt", ".md"];
 
 // POST: file -> extract -> chunk -> classify -> embed -> store
 export async function POST(req: NextRequest) {
-  const userId = await getUserId(req);
+  const userId = getUserId(req);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -61,47 +61,56 @@ export async function POST(req: NextRequest) {
     embedBatch(chunks.map((c) => c.content)),
   ]);
 
-  const db = serviceClient();
-
   // 5. Insert document row
-  const { data: doc, error: docErr } = await db
-    .from("documents")
-    .insert({
-      user_id: userId,
-      filename: file.name,
-      content_type: file.type || null,
-      doc_type: docType,
-      metadata: { chunk_count: chunks.length },
-    })
-    .select("id")
-    .single();
-
-  if (docErr || !doc) {
+  let docId: string;
+  try {
+    const inserted = await sql`
+      insert into documents (user_id, filename, content_type, doc_type, metadata)
+      values (
+        ${userId}::uuid,
+        ${file.name},
+        ${file.type || null},
+        ${docType},
+        ${JSON.stringify({ chunk_count: chunks.length })}::jsonb
+      )
+      returning id
+    `;
+    docId = inserted[0].id as string;
+  } catch (e) {
     return NextResponse.json(
-      { error: docErr?.message ?? "Failed to store document" },
+      { error: (e as Error).message ?? "Failed to store document" },
       { status: 500 },
     );
   }
 
-  // 6. Insert chunk rows with embeddings. pgvector accepts the text form "[...]".
-  const rows = chunks.map((c, i) => ({
-    document_id: doc.id,
-    user_id: userId,
-    chunk_index: c.index,
-    content: c.content,
-    token_count: c.tokenCount,
-    embedding: JSON.stringify(embeddings[i]),
-  }));
+  // 6. Insert all chunk rows in one round trip via unnest. Embeddings go in as
+  // their text form "[...]" and are cast to vector.
+  const indices = chunks.map((c) => c.index);
+  const contents = chunks.map((c) => c.content);
+  const tokens = chunks.map((c) => c.tokenCount);
+  const embStrings = embeddings.map((e) => JSON.stringify(e));
 
-  const { error: chunkErr } = await db.from("chunks").insert(rows);
-  if (chunkErr) {
+  try {
+    await sql`
+      insert into chunks
+        (document_id, user_id, chunk_index, content, token_count, embedding)
+      select
+        ${docId}::uuid, ${userId}::uuid, t.idx, t.content, t.tok, t.emb::vector
+      from unnest(
+        ${indices}::int[],
+        ${contents}::text[],
+        ${tokens}::int[],
+        ${embStrings}::text[]
+      ) as t(idx, content, tok, emb)
+    `;
+  } catch (e) {
     // Roll back the orphaned document so a retry starts clean.
-    await db.from("documents").delete().eq("id", doc.id);
-    return NextResponse.json({ error: chunkErr.message }, { status: 500 });
+    await sql`delete from documents where id = ${docId}::uuid`;
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 
   return NextResponse.json({
-    document_id: doc.id,
+    document_id: docId,
     filename: file.name,
     doc_type: docType,
     chunk_count: chunks.length,
