@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EXAMPLE_QUESTIONS, SAMPLE_QA } from "@/lib/sample";
+import { EXAMPLE_QUESTIONS, SAMPLE_QA, GITHUB_URL, UPWORK_URL } from "@/lib/sample";
 
 type Provider = "demo" | "openai" | "anthropic";
 
@@ -495,13 +495,17 @@ function BuiltBy() {
     <footer className="builtby">
       <div className="builtby-card">
         <div className="avatar" aria-hidden>
-          LC
+          JL
         </div>
         <div className="builtby-text">
-          <strong>Built by Luis Cruz</strong> — AI Automation &amp; Full-Stack
+          <strong>Built by Jean Lima</strong> — AI Automation &amp; Full-Stack
           Engineer (GoHighLevel · RAG · LLM APIs).{" "}
-          <a href="https://github.com/jeanlimaav-cmd" target="_blank" rel="noreferrer">
-            github.com/jeanlimaav-cmd
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+          {" · "}
+          <a href={UPWORK_URL} target="_blank" rel="noreferrer">
+            Upwork
           </a>
         </div>
       </div>

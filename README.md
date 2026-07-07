@@ -84,7 +84,7 @@ app/
   api/query/route.ts    live answer over the corpus via the chosen provider (OpenAI/Anthropic)
   api/ingest/route.ts   extract text from an uploaded file (no storage)
 lib/
-  sample.ts             bundled corpus (patient record + profile) + canned example answers
+  sample.ts             bundled corpus (patient record + Jean Lima profile) + canned example answers
   providers.ts          OpenAI + Anthropic adapters, grounded prompt, refusal detection
   pdf.ts                extractText()
 sample-docs/            the documents used in the demo
