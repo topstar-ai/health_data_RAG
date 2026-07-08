@@ -16,7 +16,7 @@ export interface SampleDoc {
 
 // Developer links. TODO: replace UPWORK_URL with Jean Lima's real Upwork URL.
 export const GITHUB_URL = "https://github.com/jeanlimaav-cmd";
-export const UPWORK_URL = "https://www.upwork.com/freelancers/YOUR_UPWORK_ID";
+export const UPWORK_URL = "https://www.upwork.com/freelancers/~01d6782b71f69ee540";
 
 export const PATIENT_DOC: SampleDoc = {
   filename: "patient-health-summary.md",
